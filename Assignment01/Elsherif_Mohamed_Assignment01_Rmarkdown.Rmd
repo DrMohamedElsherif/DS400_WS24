@@ -1,0 +1,256 @@
+---
+title: "DS400: Assignment I (R)"
+author: "Mohamed Elsherif (Student ID: 6378374)"
+date: "2024-11-05"
+output: html_document
+---
+
+### Directory set up & Libraries Installation
+
+```{r, include=TRUE}
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+rm(list = ls())
+setwd("C:/Users/Admin/Downloads/DS400_WS24-25/Assignment01")
+getwd()
+install.packages("ggplot2")
+options(warn = -1) 
+# Load libraries
+library(readr)
+library(data.table)
+library(microbenchmark)
+library(ggplot2)
+library(lubridate)
+library(tidyr)
+library(dplyr)
+library(stats)
+```
+
+# Importing Data
+
+### 1. Reading cvs files using three different functions
+
+```{r}
+# Define file paths
+listings <- "./data/listings_muc.csv"
+calendar <- "./data/calendar_muc.csv"
+
+# Read the listings data using the 3 different methods
+AirBNB_listings_muc_utils <- utils::read.csv(listings)
+AirBNB_listings_muc_readr <- readr::read_csv(listings, show_col_types = FALSE)
+AirBNB_listings_muc_data_table <- data.table::fread(listings)
+
+# Read the calendar data using the 3 different methods
+AirBNB_calendar_muc_utils <- utils::read.csv(calendar)
+AirBNB_calendar_muc_readr <- readr::read_csv(calendar, show_col_types = FALSE)
+AirBNB_calendar_muc_data_table <- data.table::fread(calendar)
+```
+
+### 2. Print the first five rows and column types
+
+```{r}
+# Print the first five rows and column types for listings data
+cat("First five rows of listings data (utils):")
+head(AirBNB_listings_muc_utils, 5)
+cat("Column types of listings data (utils):")
+str(AirBNB_listings_muc_utils)
+```
+
+```{r}
+# Print the first five rows and column types for calendar data
+cat("First five rows of calendar data (utils):")
+head(AirBNB_calendar_muc_utils, 5)
+cat("Column types of calendar data (utils):")
+print(sapply(AirBNB_calendar_muc_utils, class)) 
+```
+
+# Profiling the Import
+
+### 3. Computation time of read.csv, read_csv and fread
+
+```{r}
+mbm <- microbenchmark(
+  listings_utils = read.csv(listings),
+  listings_readr = read_csv(listings, show_col_types = FALSE),
+  listings_fread = fread(listings),
+  times = 10
+)
+print(mbm)
+```
+
+compare the three functions
+
+```{r}
+autoplot(mbm)
+```
+
+**comment**
+
+-   ***fread** is the fastest and **read.csv** is the slowest. By comparing the mean time for both functions, we see that fread is appr. 5 times faster than the read.csv function.*
+
+# Tidying the data
+
+### 4. Requirements for Tidy data:
+
+-   Each variable forms a column.
+-   Each observation forms a row.
+-   Each type of observational unit forms a table.
+
+### 5. Evaluating Tidiness of listings and calendar tables:
+
+#### I- listings_muc.csv
+
+**listings_muc.csv is arguably NOT tidy for the following reasons:**
+
+-   **Main Reason** The 'host_id' and 'host_name' columns form a different type of observational unit and are categorical variables that won't change, Therefore we can create a separate table to store this information. This task wasn't explicitly mentioned in the assignment, so I didn't include it as part of my solution below.
+-   The enitre 'neighbourhood_group' column and major portion of 'license' column have missing values, which questions the purpose of having both variables included for analysis. To rectify this, we should remove both.
+-   Missing values in columns 'last_review' and its current values are stored as an object datatype, requiring conversion to datetime for analysis. However since dates of 'last_review' offers limited value in current analysis unless feature engineered (e.g., into "days since last review"), I opted to drop it from the dataset.
+-   Missing values in column 'reviews_per_month' columns when 'number_of_reviews' has value of 0. To rectify this, we can replace those missing values with 0.
+-   The column 'id' needs to be converted from float in to integer or object (to avoid issues with decimals). In R, no need to perform such step as R will automatically remove the '.0'.
+-   The columns 'name' and 'host_name' (which has 1 missing value) seem irrelevant to analysis and can be removed.
+
+```{r}
+# Drop the 'name', 'host_name', 'neighbourhood_group', 'last_review' and 'license' columns
+AirBNB_listings_muc_readr<- AirBNB_listings_muc_readr %>%
+  select(-name, -host_name, -neighbourhood_group, -last_review, -license)
+
+# Set 'reviews_per_month' to 0 where 'number_of_reviews' is 0
+AirBNB_listings_muc_readr <- AirBNB_listings_muc_readr %>%
+  mutate(reviews_per_month = ifelse(number_of_reviews == 0, 0, reviews_per_month))
+```
+
+#### II- calendar_muc.csv
+
+**calendar_muc.csv is NOT tidy because:**
+
+-   The 'min_max_nights' information are two different variables placed in one column, and each cell has two values. To rectify this, we should separate into two columns: 'minimum_nights' and 'maximum_nights'.
+-   The columns 'price' and 'date' need to be converted to float/numeric (after removing the '\$' sign) and datetime format respectively.
+-   The column 'listing_id' need to be converted to integer or object (to avoid issues with decimals). In R, no need to perform such step as R will automatically remove the '.0'.
+-   The enitre 'adjusted_price' column has missing values, which questions the purpose of having this variable included for analysis. To rectify this, we should remove it.
+
+```{r}
+# Split 'min_max_nights' into 'minimum_nights' and 'maximum_nights'
+AirBNB_calendar_muc_readr <- AirBNB_calendar_muc_readr %>%
+  separate(min_max_nights, into = c("minimum_nights", "maximum_nights"), sep = "-", convert = TRUE)
+
+# Remove the dollar sign and any commas (if present)
+AirBNB_calendar_muc_readr$price <- gsub("[^0-9.]", "", AirBNB_calendar_muc_readr$price)
+
+# Convert the cleaned 'price' column from character to numeric
+AirBNB_calendar_muc_readr$price <- as.numeric(AirBNB_calendar_muc_readr$price)
+
+# Drop the 'adjusted_price' column from the data frame
+AirBNB_calendar_muc_readr <- AirBNB_calendar_muc_readr %>%
+  select(-adjusted_price)
+```
+
+### 6. Shape of the tables after making the data tidy
+
+```{r}
+# Print the first five rows and column types for listings data
+cat("First five rows of listings data (utils): \n")
+head(AirBNB_listings_muc_readr, 5)
+cat("Shape of listings data (utils):")
+print(dim(AirBNB_listings_muc_readr))
+cat("Column types of listings data (utils):")
+str(AirBNB_listings_muc_readr)
+
+
+# Print the first five rows and column types for calendar data
+cat("First five rows of calendar data (utils): \n")
+head(AirBNB_calendar_muc_readr, 5)
+cat("Shape of calendar data (utils):")
+print(dim(AirBNB_calendar_muc_readr))
+cat("Column types of calendar data (utils):")
+str(AirBNB_calendar_muc_readr)
+```
+
+### 7. Change the name of the listing_id column to id
+
+```{r}
+# Rename 'listing_id' to 'id' in the AirBNB_calendar_muc_readr_cleaned data frame
+AirBNB_calendar_muc_readr <- AirBNB_calendar_muc_readr %>%
+  dplyr::rename(id = listing_id)
+#names(AirBNB_calendar_muc_readr)[names(AirBNB_calendar_muc_readr) == "listing_id"] <- "id"
+```
+
+### 8. Aggregate the calendar data to the listing level
+
+```{r}
+# Aggregate the calendar data on 'id'
+AirBNB_calendar_aggregated <- AirBNB_calendar_muc_readr %>%
+  dplyr::group_by(id) %>%
+  dplyr::summarize(
+    minimum_nights = max(minimum_nights, na.rm = TRUE),   
+    maximum_nights = min(maximum_nights, na.rm = TRUE),    #
+    price = max(price),  
+    available = sum(available == TRUE),     # Get maximum price (in case there are variations)
+    .groups = "drop"                                       # Drop the grouping
+  )
+```
+
+### 9. Merge the aggregated calendar and the listings data by id. Call the resulting data frame merged and print its shape.
+
+```{r}
+# Merge with the listings dataset
+merged <- AirBNB_listings_muc_readr %>%
+  left_join(AirBNB_calendar_aggregated, by = "id")
+
+cat("Shape of merged data:", dim(merged), "\n")
+head(merged, 5)
+```
+
+### 10. How many neighborhoods are there in Munich? Print the number of neighborhoods and all their names. How many and which room types are there?
+
+```{r}
+# Count the number of unique neighborhoods in the merged dataset
+neighborhoods <- unique(merged$neighbourhood)
+
+# Get the number of neighborhoods
+num_neighborhoods <- length(neighborhoods)
+
+# Print the number of neighborhoods and their names
+cat("Number of neighborhoods in Munich:", num_neighborhoods, "\n")
+cat("Neighborhoods:\n")
+print(neighborhoods)
+
+
+# Count the number of unique room types in the merged dataset
+room_types <- unique(merged$room_type)
+
+# Get the number of room types
+num_room_types <- length(room_types)
+
+# Print the number of room types and their names
+cat("Number of room types:", num_room_types, "\n")
+cat("Room Types:\n")
+print(room_types)
+
+```
+
+### 11. Regress the number of available days on the price and the minimum_nights.
+
+```{r}
+# Fit the regression model
+model <- lm(available ~ price + minimum_nights, data = merged)
+summary(model)
+```
+
+**PLEASE SEE PYTHON VERSION FOR MODEL INTERPRETATION**
+
+### 12. Regress the number of available days on the price and the minimum_nights, but include neighborhood and room type as fixed effects.
+
+```{r}
+# Convert neighbourhood and room_type to factors if they are not already
+merged$neighbourhood <- as.factor(merged$neighbourhood)
+merged$room_type <- as.factor(merged$room_type)
+
+# Fit the regression model with fixed effects for neighborhood and room type
+model_fixed_effects <- lm(available ~ price + minimum_nights + neighbourhood + room_type, data = merged)
+summary(model_fixed_effects)
+```
+
+**PLEASE SEE PYTHON VERSION FOR MODEL INTERPRETATION**
+
+|                        |
+|:-----------------------|
+| **END OF SOLUTION** |
