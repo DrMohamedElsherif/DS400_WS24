@@ -1,0 +1,470 @@
+---
+title: "DS400: Assignment II (R)"
+author: "Mohamed Elsherif (Student ID: 6378374)"
+date: "2024-11-30"
+output: html_document
+---
+
+### Directory set up & Libraries Installation
+
+```{r, include=TRUE}
+# Load all libraries needed 
+library(rstudioapi)
+library(readr)
+library(data.table)
+library(ggplot2)
+library(lubridate)
+library(tidyr)
+library(dplyr)
+library(scales)  
+library(RColorBrewer)
+library(RSQLite)
+options(warn = -1) 
+```
+
+# Importing Data
+
+### 1.Use relative paths to load the data.
+
+```{r}
+# Set working directory to the R md location
+library(here)
+knitr::opts_chunk$set(root.dir = here::here())
+cat("Current working directory is:", getwd(), "\n")
+```
+
+### 2. Load the data athletes and medals data into your environment. Print the first 10 observations in each dataset. Also print all variable names for each dataset.
+
+```{r}
+# Load athletes and medals datasets 
+athletes <- read_csv("./data/athletes.csv")  
+medals <- read_csv("./data/medals.csv")  
+
+# Print first 10 rows of each dataset
+cat("First 10 observations in the athletes dataset:\n")
+head(athletes, 10)
+
+cat("\nFirst 10 observations in the medals dataset:\n")
+head(medals, 10)
+
+# Print column names for both datasets
+cat("\nColumn names in the athletes dataset:\n")
+print(names(athletes))
+
+cat("\nColumn names in the medals dataset:\n")
+print(names(medals))
+
+```
+
+### 3. How many different nationalities are there in the athletes dataset?
+
+```{r}
+# Remove NA values, then get the unique nationalities
+unique_nationalities <- unique(athletes$nationality[!is.na(athletes$nationality)])
+
+# Print number of unique nationalities
+cat("Number of different nationalities in the athletes dataset:", length(unique_nationalities), "\n")
+```
+
+# Data Visualization
+
+### 4. Create a barplot showing the number of athletes per nationality (from highest to lowest). What is wrong with this plot?
+
+```{r}
+# Remove NA values, then get the count of athletes per nationality stored as a table 
+athletes_per_nationality <- table(athletes$nationality[!is.na(athletes$nationality)])
+
+# Sort the table from highest to lowest
+athletes_per_nationality_sorted <- sort(athletes_per_nationality, decreasing = TRUE)
+
+# plot barplot
+barplot(
+  athletes_per_nationality_sorted, 
+  main = "Number of Athletes per Nationality", 
+  ylab = "Number of Athletes", 
+  las = 2, 
+  col = "lightblue", 
+  border = "blue"
+)
+```
+
+**comment** The barplot has several issues: a large number of categories can clutter the x-axis, especially if NaN or empty nationalities are not filtered out, and the dominance of a few nationalities may overshadow less-represented ones, making them nearly invisible. Additionally, displaying all categories can lead to a top-heavy visualization that lacks meaningful comparison. In R, the barplot() function is not able to fit all the labels on the x-axis by default.
+
+### 5. Make another barplot where only the most common nationalities are displayed (defined as having at least 100 athletes at the Olympics). The remaining athletes should be grouped into a "other" bar. Include the actual number of athletes in each bar.
+
+```{r}
+# Identify nationalities with at least 100 athletes
+common_nationalities <- athletes_per_nationality[athletes_per_nationality >= 100]
+
+# Get nationalities with less than 100 athletes and group as 'Other'
+other_nationalities_count <- sum(athletes_per_nationality[athletes_per_nationality < 100])
+
+# Add 'Other' category to table
+common_nationalities <- c(common_nationalities, "Other" = other_nationalities_count)
+
+# Plot 
+plotMitNumb <- barplot(
+  common_nationalities, 
+  main = "Most Common Nationalities with At Least 100 Athletes",
+  ylab = "Number of Athletes", 
+  las = 2, 
+  col = "lightblue", 
+  border = "blue",
+  names.arg = names(common_nationalities),
+  ylim = c(0, max(common_nationalities) * 1.1)
+)
+
+# Add number of athletes
+text(
+  x = plotMitNumb, 
+  y = common_nationalities, 
+  labels = common_nationalities, 
+  pos = 3, 
+  cex = 0.8, 
+  col = "black"
+)
+```
+
+### 6. Using the medals dataset, select the top 5 countries with the most medals. Create a plot showing the number of medals on the y-axis and the countries on the x-axis. Color the bars per gender. To make the plot easier to read, include only athletes that identify themselves as male or female. Use a colorblind-friendly palette
+
+```{r}
+# Filter medals dataset to include only male and female athletes
+medals_filtered <- medals[medals$gender %in% c("M", "W"), ]
+
+# Count total number of medals per country grouped by gender
+country_medals_gender <- table(medals_filtered$country_code, medals_filtered$gender)
+
+# Sum total medals for each country
+total_medals_by_country <- rowSums(country_medals_gender)
+
+# Sort countries by total medals in descending order then select top 5
+top_countries <- names(sort(total_medals_by_country, decreasing = TRUE)[1:5])
+
+# Subset dataset to include only top 5 countries
+top_countries_data <- medals_filtered[medals_filtered$country_code %in% top_countries, ]
+
+# Count number of medals per country and gender
+top_country_medals_gender <- table(top_countries_data$country_code, top_countries_data$gender)
+
+# convert to a data frame
+top_country_medals_gender_df <- as.data.frame(top_country_medals_gender)
+colnames(top_country_medals_gender_df) <- c("Country", "Gender", "Medals")
+
+# colorblind palette
+colors <- brewer.pal(3, "Set1")  
+
+# plot barplot
+ggplot(top_country_medals_gender_df, aes(x = Country, y = Medals, fill = Gender)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_manual(values = colors[1:2]) +  
+  labs(title = "Top 5 Countries by Number of Medals",
+       x = "Countries", 
+       y = "Number of Medals",
+       fill = "Gender") +
+  theme_minimal()
+```
+
+### 7. Re-create the previous plot but facet by medal type. Are there any differences between the medal types?
+
+```{r}
+# Count total number of medals per country grouped by gender + medal type
+country_medals_gender_type <- table(medals_filtered$country_code, medals_filtered$gender, medals_filtered$medal_type)
+
+# convert to a data frame
+country_medals_gender_type_df <- as.data.frame(country_medals_gender_type)
+colnames(country_medals_gender_type_df) <- c("Country", "Gender", "MedalType", "Medals")
+
+# Filter to include only the top 5 countries (based on total medals)
+total_medals_by_country <- rowSums(table(medals_filtered$country_code, medals_filtered$gender))
+top_countries <- names(sort(total_medals_by_country, decreasing = TRUE)[1:5])
+
+# Subset data to include only top 5 countries
+top_countries_data <- country_medals_gender_type_df[country_medals_gender_type_df$Country %in% top_countries, ]
+
+# colorblind palette
+colors <- brewer.pal(3, "Set1") 
+
+# plot barplot with faceting by medal type
+ggplot(top_countries_data, aes(x = Country, y = Medals, fill = Gender)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_manual(values = colors[1:2]) +  
+  labs(title = "Top 5 Countries by Number of Medals (Faceted by Medal Type)",
+       x = "Countries", 
+       y = "Number of Medals",
+       fill = "Gender") +
+  facet_wrap(~MedalType, scales = "free_y") +  
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  
+```
+
+**Comment** The USA shows stronger performance for women across all medal types, particularly in Gold and Silver medals. while France and Great Britain show a stronger performance for men in Silver and Bronze medals, though GBR balances Gold medals equally.
+
+### 8. Create a plot that shows the cumulative medals won by the top 3 country over time?
+
+```{r}
+# collect total number of medals per country over time
+medals_summary <- medals %>%
+  filter(!is.na(country_code) & !is.na(medal_date)) %>%  
+  group_by(country_code) %>%
+  summarise(total_medals = n()) %>%
+  arrange(desc(total_medals))  
+
+# Select top 3 countries
+top_3_countries <- head(medals_summary$country_code, 3)
+
+# Filter for top 3 countries
+medals_top_3 <- medals %>%
+  filter(country_code %in% top_3_countries & !is.na(medal_date)) %>%
+  mutate(medal_date = as.Date(medal_date))   
+
+# Calculate cumulative medals over time for each country
+medals_cumulative <- medals_top_3 %>%
+  group_by(country_code, medal_date) %>%
+  summarise(daily_medals = n()) %>%  
+  arrange(medal_date) %>%
+  mutate(cumulative_medals = cumsum(daily_medals))  
+
+
+ggplot(medals_cumulative, aes(x = medal_date, y = cumulative_medals, color = country_code, group = country_code)) +
+  geom_line(linewidth = 1) +  
+  geom_point(size = 2) +      
+  labs(
+    title = "Cumulative Medals Won by the Top 3 Countries Over Time",
+    x = "Date",
+    y = "Cumulative Medals",
+    color = "Country"
+  ) +
+  scale_x_date(
+    date_breaks = "1 day",  
+    date_labels = "%b %d"  
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "bottom",
+    axis.text.x = element_text(angle = 45, hjust = 1)  
+  )
+```
+
+### 9. Import the athletics dataset (discipline_athletics.csv). Keep only the data from women's and men's 100m and 200m finals. Print the dimensions of the resulting dataset.
+
+```{r}
+# Import Discp. athletics dataset
+discipline_athletics <- read_csv("./data/discipline_athletics.csv")
+
+# Filter data to keep only men's and women's 100m and 200m finals
+MW_100200 <- discipline_athletics[ 
+  discipline_athletics$event_code %in% c('ATHM100M', 'ATHM200M', 'ATHW100M', 'ATHW200M') & 
+  discipline_athletics$stage == 'Final' & 
+  discipline_athletics$gender %in% c('M', 'W'), 
+]
+
+# Print dimensions of Discp. athletics dataset
+cat("Dimensions of the filtered dataset:", dim(MW_100200), "\n")
+```
+
+### 10. Create two plots (side-by-side) that shows the distribution of the athletes' ages and their finish time, once for the 100m final and once for the 200m final. Color the athletes by their gender. Do not use a shared axes for the two plots. What can you observe from the plots?
+
+```{r}
+# Convert date columns to Date format and calculate age
+MW_100200$date <- as.Date(MW_100200$date)
+athletes$birth_date <- as.Date(athletes$birth_date)
+
+# Merge two datasets on the participant_code and code
+merged_data <- merge(MW_100200, athletes, by.x = "participant_code", by.y = "code")
+
+# Calculate age as (difference between the date and birth_date)
+merged_data$age <- as.numeric(difftime(merged_data$date, merged_data$birth_date, units = "days")) / 365.25
+
+# Split dataset for 100m and 200m 
+data_100m <- merged_data[grepl("ATHM100M|ATHW100M", merged_data$event_code), ]
+data_200m <- merged_data[grepl("ATHM200M|ATHW200M", merged_data$event_code), ]
+
+# plot for 100m 
+p1 <- ggplot(data_100m, aes(x = age, y = result, color = gender.x)) +
+  geom_point() +
+  labs(title = "100m Final: Age vs Finish Time", 
+       x = "Age (Years)", 
+       y = "Finish Time (Seconds)", 
+       color = "Gender") +  # Use labs() to set the legend title
+  scale_color_manual(values = c("M" = "blue", "W" = "red")) +
+  theme_minimal()
+
+# plot for 200m 
+p2 <- ggplot(data_200m, aes(x = age, y = result, color = gender.x)) +
+  geom_point() +
+  labs(title = "200m Final: Age vs Finish Time", 
+       x = "Age (Years)", 
+       y = "Finish Time (Seconds)", 
+       color = "Gender") +  # Use labs() to set the legend title
+  scale_color_manual(values = c("M" = "blue", "W" = "red")) +
+  theme_minimal()
+
+# put the two plots side by side
+library(gridExtra)
+grid.arrange(p1, p2, ncol = 2)
+```
+
+**comment** In both the 100m and 200m final races, younger athletes, particularly those in their early 20s, tend to perform the best, with male athletes consistently achieving faster times than their female counterparts. The fastest times in both races are dominated by male athletes, with female athletes generally recording slower times and showing more variability in performance. Age also plays a role, as older athletes tend to have slower finish times, especially in the female category. Overall, the 100m and 200m finals shows the advantage of youth and the gender performance disparity in sprinting events
+
+# SQL
+
+### 11. Print the names of all tables in the database.
+
+```{r}
+db_path <- "./data/imdb.db"
+
+# Establish connection 
+conn <- dbConnect(SQLite(), db_path)
+
+# list all tables in the database
+query <- "SELECT name FROM sqlite_master WHERE type='table';"
+
+# Execute query 
+tables <- dbGetQuery(conn, query)
+
+cat("Tables in the IMDb database:\n")
+print(tables)
+```
+
+### 12. Print the first 10 rows of the names table.
+
+```{r}
+# select first 10 rows from the 'names' table
+query <- "SELECT * FROM names LIMIT 10;"
+
+# Execute query 
+names_data <- dbGetQuery(conn, query)
+
+cat("First 10 rows of the 'names' table:\n")
+print(names_data)
+```
+
+### 13. How many unique names exist in the names table?
+
+```{r}
+# count number of unique names in 'names' table
+query <- "
+SELECT COUNT(DISTINCT primaryName) 
+FROM names
+WHERE primaryName IS NOT NULL;
+"
+# Execute query 
+unique_names_count <- dbGetQuery(conn, query)
+
+cat("Number of unique names in the 'names' table:", unique_names_count[1,1], "\n")
+```
+### 14. What is the average rating of all titles in the ratings table?
+
+```{r}
+# get column information of 'ratings' table
+query <- "PRAGMA table_info(ratings);"
+
+# Execute query 
+ratings_columns <- dbGetQuery(conn, query)
+
+cat("Columns in 'ratings' table:\n")
+print(ratings_columns)
+
+# calculate average rating from 'ratings' table
+query <- "SELECT AVG(averageRating) FROM ratings;"
+
+# Execute query 
+avg_rating <- dbGetQuery(conn, query)
+
+cat("Average rating of all titles in 'ratings' table:", avg_rating[1,1], "\n")
+```
+
+### 15. What is the average rating of all titles in the ratings table that have less than 100 votes?
+
+```{r}
+# calculate average rating for titles with fewer than 100 votes
+query <- "
+  SELECT AVG(averageRating) AS avg_rating
+  FROM ratings
+  WHERE numVotes < 100;
+"
+# Execute query
+result <- dbGetQuery(conn, query)
+
+cat("The average rating for titles with less than 100 votes is:", result$avg_rating, "\n")
+```
+
+### 16. List the names, birth years, and primary professions of the 10 oldest actors/actresses in the database.
+
+```{r}
+# Query to get the 10 oldest actors/actresses
+query <- "
+  SELECT primaryName, birthYear, primaryProfession
+  FROM names
+  WHERE (primaryProfession LIKE '%actor%' OR primaryProfession LIKE '%actress%')
+    AND birthYear IS NOT NULL
+  ORDER BY birthYear ASC
+  LIMIT 10;
+"
+# Execute query
+oldest_actors <- dbGetQuery(conn, query)
+
+cat("The 10 oldest actors/actresses:\n")
+print(oldest_actors)
+```
+
+### 17. Which three movies have the lowest ratings? Print their name, release year, title type, and rating.
+
+```{r}
+# find the three movies with lowest ratings
+query <- "
+  SELECT t.primaryTitle, t.startYear, t.titleType, r.averageRating
+  FROM titles t
+  JOIN ratings r ON t.tconst = r.tconst
+  WHERE t.titleType = 'movie'  
+  ORDER BY r.averageRating ASC  
+  LIMIT 3;  
+"
+# Execute query 
+lowest_rated_movies <- dbGetQuery(conn, query)
+
+cat("The three movies with the lowest ratings:\n")
+print(lowest_rated_movies)
+```
+
+### 18. Create a histogram plot that shows the distribution of TV series ratings vs. movie ratings. What can you observe from the plot?
+
+```{r}
+# get ratings for movies and TV series
+query <- "
+  SELECT t.titleType, r.averageRating
+  FROM titles t
+  JOIN ratings r ON t.tconst = r.tconst
+  WHERE t.titleType IN ('movie', 'tvSeries');
+"
+# Execute query
+ratings_data <- dbGetQuery(conn, query)
+
+# Convert title_type to a factor
+ratings_data$titleType <- as.factor(ratings_data$titleType)
+
+# plot histogram
+ggplot(ratings_data, aes(x = averageRating, fill = titleType)) +
+  geom_histogram(position = "identity", alpha = 0.7, bins = 20) +
+  scale_fill_manual(values = c("movie" = "blue", "tvSeries" = "red")) +
+  labs(
+    title = "Distribution of Ratings: Movies vs. TV Series",
+    x = "Average Rating",
+    y = "Frequency",
+    fill = "Title Type"
+  ) +
+  theme_minimal()
+```
+
+**Comment:** **TV Series**are generally rated higher than movies, with more frequent ratings above 7 and fewer very low ratings. On the other hand, **Movies** have a wider distribution of ratings, from extremely low to very high. There also seem to be extreme outliers on both ends for both movies and TV series. Some titles have ratings as low as 1.9 (TV series), and others as high as 9.2 (movies), indicating that both genres have extremes in viewer reception.
+
+### 19. Close the connection to the database (if applicable).
+
+```{r}
+dbDisconnect(conn)
+```
+
+|                     |
+|:--------------------|
+| **END OF SOLUTION** |
