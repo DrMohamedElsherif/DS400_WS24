@@ -1,0 +1,12 @@
+gender,adult,verbal,math,comments
+female,yes,5,6,NA
+female,yes,4,5,NA
+female,yes,2,5,NA
+female,yes,8,2,NA
+female,yes,NA,2,NA
+female,yes,6,8,e
+male,yes,3,9,c
+male,yes,3,10,c
+male,no,3,10,a
+NA,no,NA,1,b
+NA,no,7,8,d
